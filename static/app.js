@@ -1,257 +1,261 @@
+const bookGrid = document.getElementById("bookGrid");
+const bookCount = document.getElementById("bookCount");
+const searchInput = document.getElementById("searchInput");
+const categoryFilters = document.getElementById("categoryFilters");
 
-"use strict";
+const cartButton = document.getElementById("cartButton");
+const cartCount = document.getElementById("cartCount");
+const cartSection = document.getElementById("cartSection");
+const cartItems = document.getElementById("cartItems");
+const cartTotal = document.getElementById("cartTotal");
 
-const API = "/api";
-let allBooks = [];
-let cart = {};
+const checkoutForm = document.getElementById("checkoutForm");
+const customerName = document.getElementById("customerName");
+const placeOrderButton = document.getElementById("placeOrderButton");
+const checkoutMessage = document.getElementById("checkoutMessage");
+
+const trackingForm = document.getElementById("trackingForm");
+const orderIdInput = document.getElementById("orderIdInput");
+const trackingResult = document.getElementById("trackingResult");
+
+let books = [];
+let cart = [];
 let selectedCategory = "all";
 
-const $ = id => document.getElementById(id);
-
-async function apiRequest(url, options = {}) {
-    const response = await fetch(url, options);
-    const data = await response.json();
-
-    if (!response.ok) {
-        throw new Error(data.error || "Request failed.");
-    }
-
-    return data;
-}
-
-function escapeHTML(value) {
-    return String(value ?? "").replace(/[&<>"']/g, character => ({
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#39;"
-    })[character]);
+function formatPrice(price) {
+    return `₹${Number(price).toFixed(2)}`;
 }
 
 async function loadBooks() {
-    const grid = $("bookGrid");
-    grid.textContent = "Loading books...";
+    bookGrid.textContent = "Loading books...";
 
     try {
-        allBooks = await apiRequest(`${API}/books`);
+        const params = new URLSearchParams();
+
+        if (searchInput.value.trim()) {
+            params.set("q", searchInput.value.trim());
+        }
+
+        params.set("category", selectedCategory);
+
+        const response = await fetch(`/api/books?${params.toString()}`);
+
+        if (!response.ok) {
+            throw new Error("Unable to load books.");
+        }
+
+        books = await response.json();
         renderBooks();
     } catch (error) {
-        console.error("Loading books failed:", error);
-        grid.textContent = "Unable to load books: " + error.message;
+        bookGrid.textContent = "Unable to load books. Please refresh the page.";
+        bookCount.textContent = "0";
     }
 }
 
 function renderBooks() {
-    const search = $("searchInput").value.trim().toLowerCase();
+    bookCount.textContent = String(books.length);
+    bookGrid.replaceChildren();
 
-    const filtered = allBooks.filter(book => {
-        const matchesSearch =
-            book.title.toLowerCase().includes(search) ||
-            book.author.toLowerCase().includes(search);
-
-        const matchesCategory =
-            selectedCategory === "all" ||
-            book.category === selectedCategory;
-
-        return matchesSearch && matchesCategory;
-    });
-
-    $("bookCount").textContent = allBooks.length;
-
-    if (filtered.length === 0) {
-        $("bookGrid").textContent = "No books found.";
+    if (books.length === 0) {
+        bookGrid.textContent = "No books match your search.";
         return;
     }
 
-    $("bookGrid").innerHTML = filtered.map(book => `
-        <article>
-            <h3>${escapeHTML(book.title)}</h3>
-            <p>Author: ${escapeHTML(book.author)}</p>
-            <p>Category: ${escapeHTML(book.category)}</p>
-            <p>Price: ₹${Number(book.price).toFixed(2)}</p>
-            <p>${book.available ? "Available" : "Out of stock"}</p>
-            <button type="button"
-                data-add="${Number(book.id)}"
-                ${book.available ? "" : "disabled"}>
-                Add to cart
-            </button>
-        </article>
-        <hr>
-    `).join("");
+    books.forEach((book) => {
+        const article = document.createElement("article");
+        const title = document.createElement("h3");
+        const author = document.createElement("p");
+        const category = document.createElement("p");
+        const price = document.createElement("p");
+        const availability = document.createElement("p");
+        const button = document.createElement("button");
+
+        title.textContent = book.title;
+        author.textContent = `Author: ${book.author}`;
+        category.textContent = `Category: ${book.category}`;
+        price.textContent = `Price: ${formatPrice(book.price)}`;
+        availability.textContent = book.available ? "Available" : "Out of stock";
+        button.textContent = "Add to cart";
+        button.type = "button";
+        button.disabled = !book.available;
+        button.addEventListener("click", () => addToCart(book.id));
+
+        article.append(title, author, category, price, availability, button);
+        bookGrid.appendChild(article);
+    });
+}
+
+function addToCart(bookId) {
+    const book = books.find((item) => item.id === bookId);
+
+    if (!book || !book.available) {
+        return;
+    }
+
+    const existingItem = cart.find((item) => item.book_id === bookId);
+
+    if (existingItem) {
+        if (existingItem.quantity >= 10) {
+            alert("Maximum quantity per book is 10.");
+            return;
+        }
+
+        existingItem.quantity += 1;
+    } else {
+        cart.push({
+            book_id: bookId,
+            title: book.title,
+            price: book.price,
+            quantity: 1
+        });
+    }
+
+    renderCart();
 }
 
 function renderCart() {
+    cartCount.textContent = String(
+        cart.reduce((sum, item) => sum + item.quantity, 0)
+    );
+
+    cartItems.replaceChildren();
+
     let total = 0;
-    let count = 0;
-    const items = [];
 
-    for (const [id, quantity] of Object.entries(cart)) {
-        const book = allBooks.find(
-            item => Number(item.id) === Number(id)
-        );
+    cart.forEach((item) => {
+        total += item.price * item.quantity;
 
-        if (!book) continue;
+        const row = document.createElement("div");
+        const description = document.createElement("span");
+        const removeButton = document.createElement("button");
 
-        const subtotal = Number(book.price) * quantity;
-        total += subtotal;
-        count += quantity;
+        description.textContent =
+            `${item.title} × ${item.quantity} — ${formatPrice(item.price * item.quantity)}`;
 
-        items.push(`
-            <div>
-                <strong>${escapeHTML(book.title)}</strong>
-                <p>Price: ₹${Number(book.price).toFixed(2)}</p>
-                <p>Quantity: ${quantity}</p>
-                <p>Subtotal: ₹${subtotal.toFixed(2)}</p>
-                <button type="button"
-                    data-change="${id}" data-amount="-1">−</button>
-                <button type="button"
-                    data-change="${id}" data-amount="1">+</button>
-                <button type="button" data-remove="${id}">Remove</button>
-            </div>
-            <hr>
-        `);
-    }
+        removeButton.type = "button";
+        removeButton.textContent = "Remove";
+        removeButton.addEventListener("click", () => {
+            cart = cart.filter((cartItem) => cartItem.book_id !== item.book_id);
+            renderCart();
+        });
 
-    $("cartItems").innerHTML = items.length
-        ? items.join("")
-        : "Your cart is empty.";
+        row.append(description, removeButton);
+        cartItems.appendChild(row);
+    });
 
-    $("cartCount").textContent = count;
-    $("cartTotal").textContent = "Total: ₹" + total.toFixed(2);
+    cartTotal.textContent = total.toFixed(2);
 }
 
-document.addEventListener("click", event => {
-    const addButton = event.target.closest("[data-add]");
-
-    if (addButton) {
-        const id = Number(addButton.dataset.add);
-        const book = allBooks.find(item => Number(item.id) === id);
-
-        if (!book || !book.available) {
-            $("checkoutMessage").textContent = "This book is unavailable.";
-            return;
-        }
-
-        if ((cart[id] || 0) >= 10) {
-            $("checkoutMessage").textContent =
-                "Maximum quantity is 10 per book.";
-            return;
-        }
-
-        cart[id] = (cart[id] || 0) + 1;
-        renderCart();
-        $("checkoutMessage").textContent = "Book added to cart.";
-        return;
-    }
-
-    const categoryButton = event.target.closest("[data-category]");
-
-    if (categoryButton) {
-        selectedCategory = categoryButton.dataset.category || "all";
-
-        document.querySelectorAll("[data-category]").forEach(button => {
-            button.classList.toggle("active", button === categoryButton);
-        });
-
-        renderBooks();
-        return;
-    }
-
-    const changeButton = event.target.closest("[data-change]");
-
-    if (changeButton) {
-        const id = changeButton.dataset.change;
-
-        cart[id] = (cart[id] || 0) +
-            Number(changeButton.dataset.amount);
-
-        if (cart[id] <= 0) {
-            delete cart[id];
-        }
-
-        renderCart();
-        return;
-    }
-
-    const removeButton = event.target.closest("[data-remove]");
-
-    if (removeButton) {
-        delete cart[removeButton.dataset.remove];
-        renderCart();
-    }
+cartButton.addEventListener("click", () => {
+    cartSection.hidden = !cartSection.hidden;
 });
 
-$("searchInput").addEventListener("input", renderBooks);
+searchInput.addEventListener("input", loadBooks);
 
-$("cartButton").addEventListener("click", () => {
-    $("cartSection").scrollIntoView({ behavior: "smooth" });
+categoryFilters.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-category]");
+
+    if (!button) {
+        return;
+    }
+
+    selectedCategory = button.dataset.category;
+    loadBooks();
 });
 
-$("checkoutForm").addEventListener("submit", async event => {
+checkoutForm.addEventListener("submit", async (event) => {
     event.preventDefault();
 
-    const customer = $("customerName").value.trim();
-
-    const items = Object.entries(cart).map(([id, quantity]) => ({
-        book_id: Number(id),
-        quantity: quantity
-    }));
-
-    if (!customer) {
-        $("checkoutMessage").textContent = "Enter your name.";
+    if (cart.length === 0) {
+        checkoutMessage.textContent = "Please add a book before placing an order.";
         return;
     }
 
-    if (items.length === 0) {
-        $("checkoutMessage").textContent = "Your cart is empty.";
-        return;
-    }
-
-    const button = $("placeOrderButton");
-    button.disabled = true;
+    placeOrderButton.disabled = true;
+    checkoutMessage.textContent = "Placing your order...";
 
     try {
-        const order = await apiRequest(`${API}/orders`, {
+        const response = await fetch("/api/orders", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ customer, items })
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                customer: customerName.value.trim(),
+                items: cart.map((item) => ({
+                    book_id: item.book_id,
+                    quantity: item.quantity
+                }))
+            })
         });
 
-        $("checkoutMessage").textContent =
-            `Thank you, ${customer}! Order ID: ${order.order_id}. ` +
-            `Status: ${order.status}. Total: ₹${order.total}.`;
+        const result = await response.json();
 
-        cart = {};
+        if (!response.ok) {
+            throw new Error(result.error || "Unable to place order.");
+        }
+
+        cart = [];
         renderCart();
-        $("customerName").value = "";
+        checkoutForm.reset();
+
+        checkoutMessage.textContent =
+            `Thank you, ${result.customer}! Your order #${result.order_id} has been placed successfully. Total: ${formatPrice(result.total)}. Save your order ID to track your order.`;
+
+        orderIdInput.value = String(result.order_id);
+        trackingResult.replaceChildren();
+
+        const trackingMessage = document.createElement("p");
+        trackingMessage.textContent =
+            `Order #${result.order_id} — Status: ${result.status}`;
+        trackingResult.appendChild(trackingMessage);
     } catch (error) {
-        $("checkoutMessage").textContent =
-            "Order failed: " + error.message;
+        checkoutMessage.textContent = error.message;
     } finally {
-        button.disabled = false;
+        placeOrderButton.disabled = false;
     }
 });
 
-$("trackingForm").addEventListener("submit", async event => {
+trackingForm.addEventListener("submit", async (event) => {
     event.preventDefault();
 
-    const id = $("orderIdInput").value.trim();
+    const orderId = orderIdInput.value.trim();
+
+    if (!orderId) {
+        trackingResult.textContent = "Please enter an order ID.";
+        return;
+    }
+
+    trackingResult.textContent = "Looking up your order...";
 
     try {
-        const order = await apiRequest(
-            `${API}/orders/${encodeURIComponent(id)}`
+        const response = await fetch(
+            `/api/orders/${encodeURIComponent(orderId)}`
         );
 
-        $("trackingResult").textContent =
-            `Order ID: ${order.order_id} | ` +
-            `Customer: ${order.customer} | ` +
-            `Status: ${order.status} | Total: ₹${order.total}`;
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.error || "Unable to find this order.");
+        }
+
+        trackingResult.replaceChildren();
+
+        const heading = document.createElement("h3");
+        const customer = document.createElement("p");
+        const status = document.createElement("p");
+        const total = document.createElement("p");
+
+        heading.textContent = `Order #${result.order_id}`;
+        customer.textContent = `Customer: ${result.customer}`;
+        status.textContent = `Status: ${result.status}`;
+        total.textContent = `Total: ${formatPrice(result.total)}`;
+
+        trackingResult.append(heading, customer, status, total);
     } catch (error) {
-        $("trackingResult").textContent =
-            "Tracking failed: " + error.message;
+        trackingResult.textContent = error.message;
     }
 });
 
-renderCart();
 loadBooks();
+renderCart();
