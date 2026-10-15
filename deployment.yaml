@@ -1,0 +1,61 @@
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: online-bookstore
+  labels:
+    app: online-bookstore-pavan
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: online-bookstore-pavan
+  template:
+    metadata:
+      labels:
+        app: online-bookstore-pavan
+    spec:
+      containers:
+        - name: online-bookstore
+          image: raghavendrasaladi/online-bookstore-pavan:1.0
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 5000
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: online-bookstore-service
+spec:
+  type: NodePort
+  selector:
+    app: online-bookstore-pavan
+  ports:
+    - name: http
+      port: 80
+      targetPort: 5000
+      nodePort: 30021
+```
