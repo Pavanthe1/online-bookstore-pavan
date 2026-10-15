@@ -1,4 +1,3 @@
-
 from flask import Flask, render_template, request, jsonify
 
 app = Flask(__name__)
@@ -49,7 +48,7 @@ BOOKS = [
         "title": "Deep Work",
         "author": "Cal Newport",
         "category": "Productivity",
-        "price": 449,
+        "price": 450,
         "available": True
     },
     {
@@ -65,7 +64,7 @@ BOOKS = [
         "title": "Ikigai",
         "author": "Hector Garcia",
         "category": "Self-Help",
-        "price": 325,
+        "price": 299,
         "available": True
     }
 ]
@@ -79,30 +78,31 @@ def home():
     return render_template("index.html")
 
 
-@app.route("/api/books", methods=["GET"])
+@app.route("/api/books")
 def get_books():
     query = request.args.get("q", "").strip().lower()
-    category = request.args.get("category", "").strip()
+    category = request.args.get("category", "all").strip()
 
-    results = [
-        book for book in BOOKS
-        if (
-            not query
-            or query in book["title"].lower()
+    filtered_books = BOOKS
+
+    if query:
+        filtered_books = [
+            book for book in filtered_books
+            if query in book["title"].lower()
             or query in book["author"].lower()
-        )
-        and (
-            not category
-            or category.lower() == "all"
-            or category == book["category"]
-        )
-    ]
+        ]
 
-    return jsonify(results)
+    if category.lower() != "all":
+        filtered_books = [
+            book for book in filtered_books
+            if book["category"].lower() == category.lower()
+        ]
+
+    return jsonify(filtered_books)
 
 
 @app.route("/api/orders", methods=["POST"])
-def place_order():
+def create_order():
     global NEXT_ORDER_ID
 
     data = request.get_json(silent=True) or {}
@@ -110,36 +110,23 @@ def place_order():
     items = data.get("items", [])
 
     if not customer:
-        return jsonify({
-            "error": "Customer name is required."
-        }), 400
-
-    if len(customer) > 100:
-        return jsonify({
-            "error": "Customer name must be at most 100 characters."
-        }), 400
+        return jsonify({"error": "Customer name is required."}), 400
 
     if not isinstance(items, list) or not items:
-        return jsonify({
-            "error": "Your cart is empty."
-        }), 400
+        return jsonify({"error": "Cart cannot be empty."}), 400
 
     order_items = []
     total = 0
 
     for item in items:
         if not isinstance(item, dict):
-            return jsonify({
-                "error": "Invalid order item."
-            }), 400
+            return jsonify({"error": "Invalid cart item."}), 400
 
         try:
-            book_id = int(item["book_id"])
-            quantity = int(item["quantity"])
-        except (KeyError, TypeError, ValueError):
-            return jsonify({
-                "error": "Invalid book ID or quantity."
-            }), 400
+            book_id = int(item.get("book_id"))
+            quantity = int(item.get("quantity"))
+        except (TypeError, ValueError):
+            return jsonify({"error": "Invalid book ID or quantity."}), 400
 
         book = next(
             (book for book in BOOKS if book["id"] == book_id),
@@ -147,13 +134,11 @@ def place_order():
         )
 
         if book is None:
-            return jsonify({
-                "error": "Book not found."
-            }), 400
+            return jsonify({"error": "Book not found."}), 400
 
         if not book["available"]:
             return jsonify({
-                "error": f'{book["title"]} is out of stock.'
+                "error": f'{book["title"]} is currently unavailable.'
             }), 400
 
         if quantity < 1 or quantity > 10:
@@ -186,28 +171,20 @@ def place_order():
     return jsonify(order), 201
 
 
-@app.route("/api/orders/<int:order_id>", methods=["GET"])
+@app.route("/api/orders/<int:order_id>")
 def track_order(order_id):
     order = ORDERS.get(order_id)
 
     if order is None:
-        return jsonify({
-            "error": "Order not found."
-        }), 404
+        return jsonify({"error": "Order not found."}), 404
 
     return jsonify(order)
 
 
-@app.route("/health", methods=["GET"])
+@app.route("/health")
 def health():
-    return jsonify({
-        "status": "healthy"
-    }), 200
+    return jsonify({"status": "healthy"}), 200
 
 
 if __name__ == "__main__":
-    app.run(
-        host="0.0.0.0",
-        port=5000,
-        debug=False
-    )
+    app.run(host="0.0.0.0", port=5000, debug=False)

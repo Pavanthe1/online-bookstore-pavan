@@ -1,213 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PageTurner - Online Bookstore</title>
+    <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+</head>
+<body>
+    <header>
+        <h1>PageTurner</h1>
+        <p>Discover books, find your next read, and order online.</p>
+        <p>Books available: <span id="bookCount">Loading...</span></p>
+    </header>
 
-from flask import Flask, render_template, request, jsonify
+    <main>
+        <section>
+            <h2>Browse Books</h2>
+            <label for="searchInput">Search by title or author:</label>
+            <input type="search" id="searchInput" placeholder="Search books...">
 
-app = Flask(__name__)
+            <div id="categoryFilters">
+                <button type="button" data-category="all">All Books</button>
+                <button type="button" data-category="Programming">Programming</button>
+                <button type="button" data-category="Self-Help">Self-Help</button>
+                <button type="button" data-category="Fiction">Fiction</button>
+                <button type="button" data-category="Biography">Biography</button>
+                <button type="button" data-category="Productivity">Productivity</button>
+            </div>
 
-BOOKS = [
-    {
-        "id": 1,
-        "title": "Clean Code",
-        "author": "Robert C. Martin",
-        "category": "Programming",
-        "price": 499,
-        "available": True
-    },
-    {
-        "id": 2,
-        "title": "The Pragmatic Programmer",
-        "author": "David Thomas",
-        "category": "Programming",
-        "price": 599,
-        "available": True
-    },
-    {
-        "id": 3,
-        "title": "Atomic Habits",
-        "author": "James Clear",
-        "category": "Self-Help",
-        "price": 399,
-        "available": True
-    },
-    {
-        "id": 4,
-        "title": "The Alchemist",
-        "author": "Paulo Coelho",
-        "category": "Fiction",
-        "price": 299,
-        "available": True
-    },
-    {
-        "id": 5,
-        "title": "Wings of Fire",
-        "author": "A. P. J. Abdul Kalam",
-        "category": "Biography",
-        "price": 350,
-        "available": False
-    },
-    {
-        "id": 6,
-        "title": "Deep Work",
-        "author": "Cal Newport",
-        "category": "Productivity",
-        "price": 449,
-        "available": True
-    },
-    {
-        "id": 7,
-        "title": "Python Crash Course",
-        "author": "Eric Matthes",
-        "category": "Programming",
-        "price": 550,
-        "available": True
-    },
-    {
-        "id": 8,
-        "title": "Ikigai",
-        "author": "Hector Garcia",
-        "category": "Self-Help",
-        "price": 325,
-        "available": True
-    }
-]
+            <div id="bookGrid" aria-live="polite">
+                Loading books...
+            </div>
+        </section>
 
-ORDERS = {}
-NEXT_ORDER_ID = 1001
+        <section>
+            <h2>Shopping Cart</h2>
+            <button type="button" id="cartButton">
+                View Cart (<span id="cartCount">0</span>)
+            </button>
 
+            <div id="cartSection" hidden>
+                <div id="cartItems"></div>
+                <p>Total: ₹<span id="cartTotal">0</span></p>
 
-@app.route("/")
-def home():
-    return render_template("index.html")
+                <form id="checkoutForm">
+                    <label for="customerName">Your name:</label>
+                    <input
+                        type="text"
+                        id="customerName"
+                        name="customerName"
+                        required
+                        maxlength="100"
+                    >
+                    <button type="submit" id="placeOrderButton">
+                        Place Order
+                    </button>
+                </form>
 
+                <p id="checkoutMessage" role="status"></p>
+            </div>
+        </section>
 
-@app.route("/api/books", methods=["GET"])
-def get_books():
-    query = request.args.get("q", "").strip().lower()
-    category = request.args.get("category", "").strip()
+        <section>
+            <h2>Track Your Order</h2>
+            <form id="trackingForm">
+                <label for="orderIdInput">Order ID:</label>
+                <input
+                    type="number"
+                    id="orderIdInput"
+                    min="1001"
+                    required
+                >
+                <button type="submit">Track Order</button>
+            </form>
+            <div id="trackingResult" aria-live="polite"></div>
+        </section>
+    </main>
 
-    results = [
-        book for book in BOOKS
-        if (
-            not query
-            or query in book["title"].lower()
-            or query in book["author"].lower()
-        )
-        and (
-            not category
-            or category.lower() == "all"
-            or category == book["category"]
-        )
-    ]
-
-    return jsonify(results)
-
-
-@app.route("/api/orders", methods=["POST"])
-def place_order():
-    global NEXT_ORDER_ID
-
-    data = request.get_json(silent=True) or {}
-    customer = str(data.get("customer", "")).strip()
-    items = data.get("items", [])
-
-    if not customer:
-        return jsonify({
-            "error": "Customer name is required."
-        }), 400
-
-    if len(customer) > 100:
-        return jsonify({
-            "error": "Customer name must be at most 100 characters."
-        }), 400
-
-    if not isinstance(items, list) or not items:
-        return jsonify({
-            "error": "Your cart is empty."
-        }), 400
-
-    order_items = []
-    total = 0
-
-    for item in items:
-        if not isinstance(item, dict):
-            return jsonify({
-                "error": "Invalid order item."
-            }), 400
-
-        try:
-            book_id = int(item["book_id"])
-            quantity = int(item["quantity"])
-        except (KeyError, TypeError, ValueError):
-            return jsonify({
-                "error": "Invalid book ID or quantity."
-            }), 400
-
-        book = next(
-            (book for book in BOOKS if book["id"] == book_id),
-            None
-        )
-
-        if book is None:
-            return jsonify({
-                "error": "Book not found."
-            }), 400
-
-        if not book["available"]:
-            return jsonify({
-                "error": f'{book["title"]} is out of stock.'
-            }), 400
-
-        if quantity < 1 or quantity > 10:
-            return jsonify({
-                "error": "Quantity must be between 1 and 10."
-            }), 400
-
-        order_items.append({
-            "book_id": book["id"],
-            "title": book["title"],
-            "quantity": quantity,
-            "price": book["price"]
-        })
-
-        total += book["price"] * quantity
-
-    order_id = NEXT_ORDER_ID
-    NEXT_ORDER_ID += 1
-
-    order = {
-        "order_id": order_id,
-        "customer": customer,
-        "items": order_items,
-        "total": total,
-        "status": "Order placed"
-    }
-
-    ORDERS[order_id] = order
-
-    return jsonify(order), 201
-
-
-@app.route("/api/orders/<int:order_id>", methods=["GET"])
-def track_order(order_id):
-    order = ORDERS.get(order_id)
-
-    if order is None:
-        return jsonify({
-            "error": "Order not found."
-        }), 404
-
-    return jsonify(order)
-
-
-@app.route("/health", methods=["GET"])
-def health():
-    return jsonify({
-        "status": "healthy"
-    }), 200
-
-
-if __name__ == "__main__":
-    app.run(
-        host="0.0.0.0",
-        port=5000,
-        debug=False
-    )
+    <footer>
+        <p>PageTurner Online Bookstore</p>
+    </footer>
+</body>
+</html>
